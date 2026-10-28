@@ -43,6 +43,13 @@ description: Eeyi 系列的可逆压缩工具。保留行带原文行号、省�
 - 区间清单：`python3 "{{RECALL}}" map <文件>`（JSON）
 - 批量紧凑读：`python3 "{{RECALL}}" batch a.py b.py`
 
+## 什么时候用、什么时候别用
+
+- 用：输出很长（几百行以上）、不知道关键在哪，并且之后可能要按行号回读原文。
+- 别用：输入短于 20 行——行号前缀的成本超过缩减收益，stderr 会直接显示「未压缩」，读原文更快。
+- 别用：只找某一行或某个词——`grep` 定位更省；要回读再用 fetch。
+- 管道场景必须加 `--save`，否则没有原文可供 fetch。
+
 ## 必须知道
 
 - 输出每行格式 `行号| 内容`，行号是**原文行号**，可直接拿去 `fetch`。
@@ -572,6 +579,7 @@ def cmd_selftest(args):
                 body = skill.read_text(encoding="utf-8")
                 self.assertIn(str(script), body)
                 self.assertNotIn("{{RECALL}}", body)
+                self.assertIn("什么时候用", body)
 
         def test_install_check_reports_stale(self):
             with tempfile.TemporaryDirectory() as scope:

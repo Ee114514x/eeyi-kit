@@ -33,6 +33,13 @@ description: 压缩长命令输出与代码阅读量（测试、构建、日志�
 - 长输出：`<命令> 2>&1 | python3 "{{EEYI}}" trim`
 - 同法调 `digest <路径>`、`json <文件>`、`count <文件>`；先 `count` 估算再定 `--max-lines`，最多迭代 2 次（重传原文反而更费）。详见同目录 `GUIDE.md`，无则忽略。
 
+## 什么时候用、什么时候别用
+
+- 用：输出超过约 200 行，且不知道关键信息在哪（构建日志、CI 全量输出、测试报告、大 JSON）。
+- 别用：输入短于 20 行——标记与摘要的开销超过收益，stderr 会直接显示「未压缩」，读原文更快。
+- 别用：已经知道要找哪个字段或哪一行——`grep` / `--filter` 定位比整段压缩更省。
+- 要「所有错误」而不是「第一个」：加 `--keep-all-errors`，token 会上涨，但错误行不丢。
+
 ## 必须知道
 
 - `<…第 N 行>` 的行号是折叠后序号，不是原文行号，不能回查；回原文只按 `<错误位置：文件:行号>`（正则提取，可能是无关路径，需确认）。
@@ -1276,6 +1283,7 @@ def cmd_selftest(args):
                 body = skill.read_text(encoding="utf-8")
                 self.assertIn(str(script), body)
                 self.assertNotIn("{{EEYI}}", body)
+                self.assertIn("什么时候用", body)
                 run = subprocess.run([sys.executable, str(script), "trim"], input="a\n", capture_output=True, text=True)
                 self.assertEqual(run.returncode, 0)
 
