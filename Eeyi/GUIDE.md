@@ -117,7 +117,7 @@ python3 eeyi.py count app.log
 ```bash
 python3 verify_usage.py    # 17 条实现约定，逐条输出证据
 python3 verify_skill.py    # 技能正文覆盖/禁止表述/成本
-python3 eeyi.py selftest   # 65 项内置单测
+python3 eeyi.py selftest   # 66 项内置单测
 python3 eeyi.py bench      # 10 场景压缩率、保真、耗时
 ```
 
@@ -126,5 +126,5 @@ python3 eeyi.py bench      # 10 场景压缩率、保真、耗时
 | `verify_usage.py` | 行号基准、错误位置可能无关、摘要缺失条件、输出超预算、diff 改写与长行截断、堆栈偏宽与自定义异常、keep-all-errors、同类归并、严重度排序、json 截断、标记非连续、digest 小文件、长堆栈对齐与压缩率 | 17/17 |
 | `verify_skill.py` | 安装源正文的 20 项内容覆盖、6 项已证伪表述（含 U+2011、不可执行省略号命令）、GUIDE 5 项、模板渲染 | 全 PASS |
 | `verify_tokens.py` | 11 个样本的估算 vs tiktoken（cl100k/o200k）实际值，以及安装源相对已装副本的真实节省 | 平均误差约 18% |
-| `selftest` | 65 项：核心函数边界、CLI 退出码、目录/二进制/非法参数、CRLF/ANSI/超长行、安装幂等与副本核对、长堆栈异常保留 | 65 OK |
+| `selftest` | 66 项：核心函数边界、CLI 退出码、目录/二进制/非法参数、CRLF/ANSI/超长行、安装幂等与副本核对、长堆栈异常保留 | 66 OK |
 | `bench` | 10 个场景的压缩率 + 25 项保真断言 + 耗时 | 30/30 |

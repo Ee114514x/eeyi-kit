@@ -175,6 +175,16 @@ def fingerprint(path):
     return hashlib.sha256(data).hexdigest()[:12], data.count(b"\n") + (0 if data.endswith(b"\n") or not data else 1)
 
 
+def token_stats(before, after, why="输入过短，已无可折叠内容"):
+    """统计短语：真压缩了给百分比，反而变大时直说未压缩，不给负百分比。"""
+    if before <= 0:
+        return "~0→0 token"
+    saved = round(100 * (1 - after / before))
+    if saved >= 0:
+        return f"~{before}→{after} token ({saved:+d}%)"
+    return f"~{before}→{after} token（未压缩：{why}）"
+
+
 def cmd_trim(args):
     raw = read_text(args.file)
     if args.save:
@@ -185,9 +195,8 @@ def cmd_trim(args):
     )
     text = "\n".join(out)
     sys.stdout.write(text + ("\n" if text else ""))
-    before, after = count_tokens(raw), count_tokens(text)
-    saved = 0 if before == 0 else round(100 * (1 - after / before))
-    sys.stderr.write(f"recall trim: {len(raw.splitlines())}→{len(out)} 行, ~{before}→{after} token ({saved:+d}%)\n")
+    stats = token_stats(count_tokens(raw), count_tokens(text), "行号前缀在这一量级下超过裁剪收益")
+    sys.stderr.write(f"recall trim: {len(raw.splitlines())}→{len(out)} 行, {stats}\n")
     if omitted:
         sys.stderr.write(f"recall: 可回读区间 " + ", ".join(f"{a}-{b}" for a, b in omitted[:10]) + "\n")
     return 0
@@ -530,6 +539,12 @@ def cmd_selftest(args):
                 self.assertEqual(saved.read_text(encoding="utf-8"), body)
                 fetched = run_cli(["fetch", str(saved), "101"])
                 self.assertIn("ERROR boom", fetched.stdout)
+
+        def test_tiny_input_reports_not_compressed(self):
+            proc = run_cli(["trim"], "a\nb\n")
+            self.assertEqual(proc.returncode, 0)
+            self.assertIn("未压缩", proc.stderr)
+            self.assertNotIn("(-", proc.stderr)
 
         def test_version_flag(self):
             self.assertIn("recall", run_cli(["--version"]).stdout)

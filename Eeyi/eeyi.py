@@ -387,6 +387,16 @@ def trim_text(raw, max_lines=80, head=12, tail=12, max_col=300, min_repeat=3, ma
     return "\n".join(select(lines, limit, head, tail, keep_all_errors))
 
 
+def token_stats(before, after, why="输入过短，已无可折叠内容"):
+    """统计短语：真压缩了给百分比，反而变大时直说未压缩，不给负百分比。"""
+    if before <= 0:
+        return "~0→0 token"
+    saved = round(100 * (1 - after / before))
+    if saved >= 0:
+        return f"~{before}→{after} token ({saved:+d}%)"
+    return f"~{before}→{after} token（未压缩：{why}）"
+
+
 def cmd_trim(args):
     raw = read_text(args.file)
     out = trim_text(
@@ -395,12 +405,9 @@ def cmd_trim(args):
     )
     sys.stdout.write(out + ("\n" if out else ""))
 
-    before_tokens = count_tokens(raw)
-    after_tokens = count_tokens(out)
-    saved = 0 if before_tokens == 0 else round(100 * (1 - after_tokens / before_tokens))
+    stats = token_stats(count_tokens(raw), count_tokens(out))
     sys.stderr.write(
-        f"eeyi trim: {len(raw.splitlines())}→{len(out.splitlines())} 行, "
-        f"~{before_tokens}→{after_tokens} token ({saved:+d}%)\n"
+        f"eeyi trim: {len(raw.splitlines())}→{len(out.splitlines())} 行, {stats}\n"
     )
     if looks_like_single_line_json(raw):
         sys.stderr.write("eeyi: 整份输入是单行 JSON，需要字段结构请用 json 子命令，避免行内截断产生拼接值\n")
@@ -555,8 +562,8 @@ def cmd_json(args):
     sys.stdout.write(text + "\n")
     before = count_tokens(raw)
     after = count_tokens(text)
-    saved = 0 if before == 0 else round(100 * (1 - after / before))
-    sys.stderr.write(f"eeyi json: ~{before}→{after} token ({saved:+d}%)\n")
+    stats = token_stats(before, after, "结构摘要比原始小 JSON 更占篇幅")
+    sys.stderr.write(f"eeyi json: {stats}\n")
     return 0
 
 
@@ -1120,6 +1127,12 @@ def cmd_selftest(args):
 
         def test_version_flag(self):
             self.assertIn("eeyi", run_cli(["--version"]).stdout)
+
+        def test_tiny_json_reports_not_compressed(self):
+            proc = run_cli(["json"], '{"a":1}')
+            self.assertEqual(proc.returncode, 0)
+            self.assertIn("未压缩", proc.stderr)
+            self.assertNotIn("(-", proc.stderr)
 
         def test_crlf_normalized(self):
             self.assertEqual(run_cli(["trim"], "a\r\nb\r\n").stdout, "a\nb\n")

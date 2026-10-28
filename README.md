@@ -1,5 +1,7 @@
 # Eeyi
 
+**中文** · [English](README.en.md) · [日本語](README.ja.md)
+
 [![test](https://github.com/Ee114514x/eeyi-kit/actions/workflows/test.yml/badge.svg)](https://github.com/Ee114514x/eeyi-kit/actions/workflows/test.yml)
 
 Eeyi 系列：两个零依赖的单文件工具，解决同一个问题——AI 助手读长内容时既要省上下文，又不能丢掉关键信息。
@@ -61,6 +63,8 @@ recall fetch: 119-124 行，共 6 行
 python3 EeyiRecall/recall.py fetch build.log 401-430
 ```
 
+输入短于约 20 行时会显示「未压缩」：行号前缀的成本超过了裁剪收益，这时直接读原文更快。
+
 ## 安装
 
 各自的脚本都能把自己注册成技能：
@@ -107,8 +111,8 @@ Python 3.8+，零第三方依赖。`verify_tokens.py` 需要可选的 `tiktoken`
 ## 自检
 
 ```bash
-python3 Eeyi/eeyi.py selftest         # 65 项
-python3 EeyiRecall/recall.py selftest # 23 项
+python3 Eeyi/eeyi.py selftest         # 66 项
+python3 EeyiRecall/recall.py selftest # 24 项
 python3 Eeyi/verify_usage.py          # 17 条实现约定，输出证据
 ```
 
