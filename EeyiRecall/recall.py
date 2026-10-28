@@ -324,6 +324,97 @@ def cmd_selftest(args):
         def test_empty(self):
             self.assertEqual(build([]), ([], [], []))
 
+        def test_matches_reference_implementation(self):
+            """逐字比对的朴素实现作为基准，确保任何优化都改变不了结果。"""
+            import random
+
+            def reference(lines, min_repeat=3, max_period=16):
+                found = []
+                i = 0
+                total = len(lines)
+                while i < total:
+                    best = None
+                    for period in range(1, max_period + 1):
+                        if i + period * min_repeat > total:
+                            break
+                        block = lines[i:i + period]
+                        count = 1
+                        while i + (count + 1) * period <= total and lines[
+                            i + count * period:i + (count + 1) * period
+                        ] == block:
+                            count += 1
+                        if count >= min_repeat and (best is None or count * period > best[0] * best[1]):
+                            best = (count, period)
+                    if best is None:
+                        i += 1
+                        continue
+                    count, period = best
+                    found.append((i, i + count * period, period))
+                    i += count * period
+                return found
+
+            rnd = random.Random(20261028)
+            cases = [
+                [],
+                ["a"] * 40,
+                ["a", "b"] * 2 + ["a", "c"] * 2,
+                ["a", "b", "c", "END"] * 4,
+            ]
+            for p in (1, 2, 3, 7):
+                block = ["p%d" % k for k in range(p)]
+                seq = []
+                for rep in range(6):
+                    piece = list(block)
+                    if rep == 3:
+                        piece[-1] = "CHANGED"
+                    seq += piece
+                cases.append(seq)
+            for _ in range(120):
+                alpha = rnd.choice([1, 2, 3, 5, 20])
+                cases.append(["v%d" % rnd.randrange(alpha) for _ in range(rnd.randint(0, 150))])
+
+            for lines in cases:
+                for kwargs in ({}, {"min_repeat": 2}, {"max_period": 4}):
+                    self.assertEqual(repeats(lines, **kwargs), reference(lines, **kwargs))
+
+        def test_repeat_markers_match_source(self):
+            """输出里每一条“与第 x-y 行相同”必须真的是原文里那个块的整数倍重复。"""
+            import random
+            import re
+
+            marker = re.compile(r"<第 (\d+)-(\d+) 行与第 (\d+)-(\d+) 行相同>")
+            rnd = random.Random(7)
+            for _ in range(60):
+                alpha = rnd.choice([1, 2, 3, 6])
+                lines = ["v%d" % rnd.randrange(alpha) for _ in range(rnd.randint(0, 120))]
+                out, _, _ = build(lines, max_lines=20, head=3, tail=3)
+                for line in out:
+                    found = marker.search(line)
+                    if found:
+                        a, b, c, d = map(int, found.groups())
+                        block = lines[c - 1:d]
+                        span = b - a + 1
+                        self.assertEqual(span % len(block), 0, line)
+                        self.assertEqual(lines[a - 1:b], block * (span // len(block)), line)
+
+        def test_repeats_are_maximal(self):
+            """报出的重复段不能再往前延一个周期，否则就是提前截断、丢了可折叠的行。"""
+            import random
+
+            rnd = random.Random(99)
+            for _ in range(80):
+                alpha = rnd.choice([1, 2, 3])
+                lines = ["v%d" % rnd.randrange(alpha) for _ in range(rnd.randint(0, 90))]
+                previous_end = 0
+                for start, end, period in repeats(lines):
+                    self.assertGreaterEqual(start, previous_end)
+                    previous_end = end
+                    block = lines[start:start + period]
+                    self.assertGreaterEqual((end - start) // period, 3)
+                    self.assertEqual(lines[start:end], block * ((end - start) // period))
+                    if end + period <= len(lines):
+                        self.assertNotEqual(lines[end:end + period], block)
+
         def test_ansi_stripped(self):
             out, _, _ = build(["\x1b[31merror red\x1b[0m", "ok"])
             self.assertTrue(any("error red" in line for line in out))

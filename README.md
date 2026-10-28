@@ -108,11 +108,13 @@ Python 3.8+，零第三方依赖。`verify_tokens.py` 需要可选的 `tiktoken`
 
 ```bash
 python3 Eeyi/eeyi.py selftest         # 65 项
-python3 EeyiRecall/recall.py selftest # 20 项
+python3 EeyiRecall/recall.py selftest # 23 项
 python3 Eeyi/verify_usage.py          # 17 条实现约定，输出证据
 ```
 
 边界用例已覆盖：空输入、超长单行（20 万字符）、二进制/非 UTF-8、CRLF、ANSI 转义。
+
+重复区间检测有一份逐字比对的朴素实现作为基准，随机与对抗输入上逐一比对，保证性能优化不改变任何折叠结果；另有一条不变量测试，逐条核对输出里的「与第 x-y 行相同」在原文中确实是该块的整数倍重复。
 
 ## 许可
 
