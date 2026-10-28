@@ -93,3 +93,7 @@ python3 Eeyi/eeyi.py selftest         # 60 项
 python3 EeyiRecall/recall.py selftest # 15 项
 python3 Eeyi/verify_usage.py          # 17 条实现约定，输出证据
 ```
+
+## 许可
+
+MIT，见 [LICENSE](LICENSE)。© 2026 Eeyi09。
