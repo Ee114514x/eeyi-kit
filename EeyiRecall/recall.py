@@ -16,7 +16,10 @@ import shutil
 import sys
 from pathlib import Path
 
+__version__ = "0.2.0"
+
 ANSI = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
+VERSION_MARK = re.compile(r"<!-- recall ([0-9.]+) sha256:[0-9a-f]{64} -->")
 CJK = re.compile(r"[\u3400-\u4dbf\u4e00-\u9fff\u3040-\u30ff\uac00-\ud7af]")
 KEY = re.compile(
     r"(?:error|errors|exception|traceback|failed|failure|fatal|panic|assert\w*|"
@@ -35,6 +38,7 @@ description: Eeyi 系列的可逆压缩工具。保留行带原文行号、省�
 `python3 "{{RECALL}}"`（零依赖，py3.8+，Windows 用 `python`）。stdout 是内容，stderr 是统计。
 
 - 压缩：`<命令> 2>&1 | python3 "{{RECALL}}" trim`
+- 管道场景想回读：`trim --save out.log`，之后对 out.log 用 fetch
 - 按区间回读：`python3 "{{RECALL}}" fetch <文件> 401-430`
 - 区间清单：`python3 "{{RECALL}}" map <文件>`（JSON）
 - 批量紧凑读：`python3 "{{RECALL}}" batch a.py b.py`
@@ -66,6 +70,13 @@ def clip_line(line, max_col):
     return f"{line[:keep]}…<省略 {len(line) - keep * 2} 字符>…{line[-keep:]}"
 
 
+def _same_block(lines, left, right, period):
+    for offset in range(period):
+        if lines[left + offset] != lines[right + offset]:
+            return False
+    return True
+
+
 def repeats(lines, min_repeat=3, max_period=16):
     """返回 [(start, end, period)]，end 不含。只记录逐字相同的连续重复。"""
     found = []
@@ -76,20 +87,19 @@ def repeats(lines, min_repeat=3, max_period=16):
         for period in range(1, max_period + 1):
             if i + period * min_repeat > total:
                 break
-            block = lines[i:i + period]
-            repeats_count = 1
-            while i + (repeats_count + 1) * period <= total and lines[
-                i + repeats_count * period:i + (repeats_count + 1) * period
-            ] == block:
-                repeats_count += 1
-            if repeats_count >= min_repeat and (best is None or repeats_count * period > best[0] * best[1]):
-                best = (repeats_count, period)
+            if lines[i + period] != lines[i]:
+                continue
+            count = 1
+            while i + (count + 1) * period <= total and _same_block(lines, i, i + count * period, period):
+                count += 1
+            if count >= min_repeat and (best is None or count * period > best[0] * best[1]):
+                best = (count, period)
         if best is None:
             i += 1
             continue
-        repeats_count, period = best
-        found.append((i, i + repeats_count * period, period))
-        i += repeats_count * period
+        count, period = best
+        found.append((i, i + count * period, period))
+        i += count * period
     return found
 
 
@@ -167,6 +177,9 @@ def fingerprint(path):
 
 def cmd_trim(args):
     raw = read_text(args.file)
+    if args.save:
+        Path(args.save).write_text(raw, encoding="utf-8")
+        sys.stderr.write(f"recall: 原文已存 {args.save}，可用 fetch {args.save} <区间> 回读\n")
     out, kept, omitted = build(
         raw.splitlines(), args.max_lines, args.head, args.tail, args.max_col, args.min_repeat
     )
@@ -263,16 +276,36 @@ def cmd_install(args):
     source = Path(__file__).resolve()
     scope = Path(args.scope).expanduser().resolve() if args.scope else default_scope(source)
     dest = scope / "EeyiRecall"
-    dest.mkdir(parents=True, exist_ok=True)
     script = dest / "recall.py"
+
+    if getattr(args, "check", False):
+        if not script.is_file():
+            print(f"未安装: {dest}")
+            return 1
+        same = hashlib.sha256(source.read_bytes()).digest() == hashlib.sha256(script.read_bytes()).digest()
+        skill = dest / "SKILL.md"
+        installed = "未知"
+        if skill.is_file():
+            found = VERSION_MARK.search(skill.read_text(encoding="utf-8", errors="replace"))
+            if found:
+                installed = found.group(1)
+        print(f"源码: {source} (v{__version__})")
+        print(f"副本: {script} (v{installed})")
+        print("状态: 一致" if same else "状态: 过期，请重新运行 install 覆盖")
+        return 0 if same else 1
+
+    dest.mkdir(parents=True, exist_ok=True)
     if script != source:
         shutil.copyfile(source, script)
+    digest = hashlib.sha256(source.read_bytes()).hexdigest()
     body = SKILL_TEMPLATE.replace("{{RECALL}}", str(script))
+    body += f"\n<!-- recall {__version__} sha256:{digest} -->\n"
     (dest / "SKILL.md").write_text(body, encoding="utf-8")
     print(f"已安装技能: {dest}")
     print(f"  技能正文: {dest / 'SKILL.md'}")
     print(f"  伴随脚本: {script}")
-    print("新会话生效；自检: python3 上面脚本 selftest")
+    print(f"  版本: {__version__}")
+    print("新会话生效；核对副本可用 install --check，自检用 selftest")
     return 0
 
 
@@ -290,6 +323,16 @@ def cmd_selftest(args):
     class CoreTest(unittest.TestCase):
         def test_empty(self):
             self.assertEqual(build([]), ([], [], []))
+
+        def test_ansi_stripped(self):
+            out, _, _ = build(["\x1b[31merror red\x1b[0m", "ok"])
+            self.assertTrue(any("error red" in line for line in out))
+            self.assertFalse(any("\x1b" in line for line in out))
+
+        def test_crlf_not_leaking(self):
+            proc = run_cli(["trim"], "a\r\nb\r\n")
+            self.assertEqual(proc.returncode, 0)
+            self.assertNotIn("\r", proc.stdout)
 
         def test_kept_lines_carry_original_numbers(self):
             lines = [f"line {i}" for i in range(100)]
@@ -386,6 +429,20 @@ def cmd_selftest(args):
             self.assertIn("| ", proc.stdout)
             self.assertIn("recall trim", proc.stderr)
 
+        def test_trim_save_then_fetch(self):
+            with tempfile.TemporaryDirectory() as folder:
+                saved = Path(folder, "saved.log")
+                body = "\n".join(f"line {i}" for i in range(100)) + "\nERROR boom\n"
+                proc = run_cli(["trim", "--save", str(saved)], body)
+                self.assertEqual(proc.returncode, 0)
+                self.assertIn("可回读", proc.stderr)
+                self.assertEqual(saved.read_text(encoding="utf-8"), body)
+                fetched = run_cli(["fetch", str(saved), "101"])
+                self.assertIn("ERROR boom", fetched.stdout)
+
+        def test_version_flag(self):
+            self.assertIn("recall", run_cli(["--version"]).stdout)
+
         def test_missing_file(self):
             self.assertEqual(run_cli(["trim", "/nonexistent/x.log"]).returncode, 2)
 
@@ -410,6 +467,17 @@ def cmd_selftest(args):
                 self.assertIn(str(script), body)
                 self.assertNotIn("{{RECALL}}", body)
 
+        def test_install_check_reports_stale(self):
+            with tempfile.TemporaryDirectory() as scope:
+                self.assertEqual(run_cli(["install", "--scope", scope]).returncode, 0)
+                fresh = run_cli(["install", "--scope", scope, "--check"])
+                self.assertEqual(fresh.returncode, 0)
+                self.assertIn("一致", fresh.stdout)
+                Path(scope, "EeyiRecall", "recall.py").write_text("# old\n", encoding="utf-8")
+                stale = run_cli(["install", "--scope", scope, "--check"])
+                self.assertEqual(stale.returncode, 1)
+                self.assertIn("过期", stale.stdout)
+
     suite = unittest.TestSuite()
     loader = unittest.TestLoader()
     for case in (CoreTest, CliTest, InstallTest):
@@ -420,6 +488,7 @@ def cmd_selftest(args):
 
 def main(argv=None):
     parser = argparse.ArgumentParser(prog="recall", description=__doc__)
+    parser.add_argument("--version", action="version", version=f"recall {__version__}")
     sub = parser.add_subparsers(dest="cmd", required=True)
 
     p = sub.add_parser("trim", help="可逆压缩：保留行带原文行号，省略处标原文区间")
@@ -429,6 +498,7 @@ def main(argv=None):
     p.add_argument("--tail", type=int, default=12)
     p.add_argument("--max-col", type=int, default=300)
     p.add_argument("--min-repeat", type=int, default=3)
+    p.add_argument("--save", metavar="PATH", help="把原始输入原样存盘，之后可用 fetch 回读（管道场景用）")
     p.set_defaults(func=cmd_trim)
 
     p = sub.add_parser("fetch", help="按原文区间回读")
@@ -459,6 +529,7 @@ def main(argv=None):
 
     p = sub.add_parser("install", help="安装为技能")
     p.add_argument("--scope")
+    p.add_argument("--check", action="store_true", help="不安装，只比对已安装副本与源码是否一致")
     p.set_defaults(func=cmd_install)
 
     p = sub.add_parser("selftest")

@@ -1,0 +1,35 @@
+name: test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.9", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Eeyi 自检
+        run: python Eeyi/eeyi.py selftest
+
+      - name: EeyiRecall 自检
+        run: python EeyiRecall/recall.py selftest
+
+      - name: 实现约定校验
+        run: python Eeyi/verify_usage.py
+
+      - name: 安装与副本核对
+        run: |
+          python Eeyi/eeyi.py install --scope /tmp/skills
+          python Eeyi/eeyi.py install --scope /tmp/skills --check
+          python EeyiRecall/recall.py install --scope /tmp/skills
+          python EeyiRecall/recall.py install --scope /tmp/skills --check

@@ -1,5 +1,7 @@
 # Eeyi
 
+[![test](https://github.com/Ee114514x/eeyi-kit/actions/workflows/test.yml/badge.svg)](https://github.com/Ee114514x/eeyi-kit/actions/workflows/test.yml)
+
 Eeyi 系列：两个零依赖的单文件工具，解决同一个问题——AI 助手读长内容时既要省上下文，又不能丢掉关键信息。
 
 | 工具 | 作用 | 可逆 |
@@ -51,6 +53,14 @@ recall fetch: 119-124 行，共 6 行
 124| INFO step 124 ok
 ```
 
+如果是管道而不是文件，加上 `--save` 把原文落盘，回读才有目标：
+
+```bash
+./build.sh 2>&1 | python3 EeyiRecall/recall.py trim --save build.log
+# stderr: recall: 原文已存 build.log，可用 fetch build.log <区间> 回读
+python3 EeyiRecall/recall.py fetch build.log 401-430
+```
+
 ## 安装
 
 各自的脚本都能把自己注册成技能：
@@ -58,6 +68,14 @@ recall fetch: 119-124 行，共 6 行
 ```bash
 python3 Eeyi/eeyi.py install          # 自动找最近的 .aicode/skills
 python3 EeyiRecall/recall.py install  # 同上，或用 --scope 指定
+```
+
+装完之后可以随时核对技能目录里的副本是不是最新（源码改了但没重装是最常见的坑）：
+
+```bash
+python3 Eeyi/eeyi.py install --check          # 一致 / 过期 / 未安装
+python3 EeyiRecall/recall.py install --check
+python3 Eeyi/eeyi.py --version                # 两边都有版本号
 ```
 
 不装成技能也能直接当命令用，管道里读 stdout 即可，统计信息走 stderr。
@@ -84,15 +102,17 @@ EeyiRecall/
 
 ## 环境
 
-Python 3.8+，零第三方依赖。`verify_tokens.py` 需要可选的 `tiktoken`。
+Python 3.8+，零第三方依赖。`verify_tokens.py` 需要可选的 `tiktoken`。CI 覆盖 3.9 与 3.12。
 
 ## 自检
 
 ```bash
-python3 Eeyi/eeyi.py selftest         # 60 项
-python3 EeyiRecall/recall.py selftest # 15 项
+python3 Eeyi/eeyi.py selftest         # 65 项
+python3 EeyiRecall/recall.py selftest # 20 项
 python3 Eeyi/verify_usage.py          # 17 条实现约定，输出证据
 ```
+
+边界用例已覆盖：空输入、超长单行（20 万字符）、二进制/非 UTF-8、CRLF、ANSI 转义。
 
 ## 许可
 

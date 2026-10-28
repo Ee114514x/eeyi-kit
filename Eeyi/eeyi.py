@@ -7,6 +7,7 @@
 """
 
 import argparse
+import hashlib
 import json
 import math
 import os
@@ -15,7 +16,10 @@ import shutil
 import sys
 from pathlib import Path
 
+__version__ = "0.2.0"
+
 ANSI = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
+VERSION_MARK = re.compile(r"<!-- eeyi ([0-9.]+) sha256:[0-9a-f]{64} -->")
 
 SKILL_TEMPLATE = '''---
 name: Eeyi
@@ -567,20 +571,40 @@ def cmd_install(args):
     source = Path(__file__).resolve()
     scope = Path(args.scope).expanduser().resolve() if args.scope else default_scope()
     dest = scope / "Eeyi"
+    script = dest / "eeyi.py"
+
+    if getattr(args, "check", False):
+        if not script.is_file():
+            print(f"未安装: {dest}")
+            return 1
+        same = hashlib.sha256(source.read_bytes()).digest() == hashlib.sha256(script.read_bytes()).digest()
+        skill = dest / "SKILL.md"
+        installed = "未知"
+        if skill.is_file():
+            found = VERSION_MARK.search(skill.read_text(encoding="utf-8", errors="replace"))
+            if found:
+                installed = found.group(1)
+        print(f"源码: {source} (v{__version__})")
+        print(f"副本: {script} (v{installed})")
+        print("状态: 一致" if same else "状态: 过期，请重新运行 install 覆盖")
+        return 0 if same else 1
+
     for target in (scope, dest):
         if target.exists() and not target.is_dir():
             sys.stderr.write(f"eeyi install: 目标不是目录: {target}\n")
             return 2
     dest.mkdir(parents=True, exist_ok=True)
-    script = dest / "eeyi.py"
     if script != source:
         shutil.copyfile(source, script)
+    digest = hashlib.sha256(source.read_bytes()).hexdigest()
     body = SKILL_TEMPLATE.replace("{{EEYI}}", str(script))
+    body += f"\n<!-- eeyi {__version__} sha256:{digest} -->\n"
     (dest / "SKILL.md").write_text(body, encoding="utf-8")
     print(f"已安装技能: {dest}")
     print(f"  技能正文: {dest / 'SKILL.md'}")
     print(f"  伴随脚本: {script}")
-    print("新会话生效；自检: python3 上面脚本 selftest")
+    print(f"  版本: {__version__}")
+    print("新会话生效；核对副本可用 install --check，自检用 selftest")
     return 0
 
 
@@ -596,6 +620,7 @@ def ensure_utf8_streams():
 
 def main(argv=None):
     parser = argparse.ArgumentParser(prog="eeyi", description=__doc__)
+    parser.add_argument("--version", action="version", version=f"eeyi {__version__}")
     sub = parser.add_subparsers(dest="cmd", required=True)
 
     p = sub.add_parser("trim", help="压缩命令输出，保留错误行、头尾与原有行")
@@ -628,6 +653,7 @@ def main(argv=None):
 
     p = sub.add_parser("install", help="把技能装到技能目录，脚本一并复制")
     p.add_argument("--scope", help="技能目录；默认当前项目有 .aicode 就装项目级，否则装全局")
+    p.add_argument("--check", action="store_true", help="不安装，只比对已安装副本与源码是否一致")
     p.set_defaults(func=cmd_install)
 
     p = sub.add_parser("bench", help="跑压缩率、信息保真与耗时基准")
@@ -1092,6 +1118,20 @@ def cmd_selftest(args):
             self.assertEqual(proc.returncode, 0)
             self.assertEqual(proc.stdout, "")
 
+        def test_version_flag(self):
+            self.assertIn("eeyi", run_cli(["--version"]).stdout)
+
+        def test_crlf_normalized(self):
+            self.assertEqual(run_cli(["trim"], "a\r\nb\r\n").stdout, "a\nb\n")
+
+        def test_ansi_stripped(self):
+            self.assertEqual(run_cli(["trim"], "\x1b[31mred\x1b[0m\n").stdout, "red\n")
+
+        def test_very_long_single_line(self):
+            proc = run_cli(["trim", "--max-col", "40"], "x" * 200000 + "\n")
+            self.assertEqual(proc.returncode, 0)
+            self.assertLess(len(proc.stdout), 200)
+
         def test_missing_file(self):
             self.assertEqual(run_cli(["trim", "/nonexistent/file.txt"]).returncode, 2)
 
@@ -1240,6 +1280,17 @@ def cmd_selftest(args):
                 proc = run_cli(["install", "--scope", str(target)])
                 self.assertEqual(proc.returncode, 2)
                 self.assertNotIn("Traceback", proc.stderr)
+
+        def test_install_check_reports_stale(self):
+            with tempfile.TemporaryDirectory() as scope:
+                self.assertEqual(run_cli(["install", "--scope", scope]).returncode, 0)
+                fresh = run_cli(["install", "--scope", scope, "--check"])
+                self.assertEqual(fresh.returncode, 0)
+                self.assertIn("一致", fresh.stdout)
+                Path(scope, "Eeyi", "eeyi.py").write_text("# old\n", encoding="utf-8")
+                stale = run_cli(["install", "--scope", scope, "--check"])
+                self.assertEqual(stale.returncode, 1)
+                self.assertIn("过期", stale.stdout)
 
     suite = unittest.TestSuite()
     loader = unittest.TestLoader()
